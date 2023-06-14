@@ -10,14 +10,20 @@ class RetrieveResponseView(APIView):
     def get(self, request, format=None):
         message = request.query_params.get('message', '')
         conditions = Condition.objects.all()
-        
-        matched_responses = []
-        for condition in conditions:
-            keywords = list(map(lambda x: x.strip(), condition.get_keywords()))
-            print(keywords)
-            if (condition.operation == 'and' and all(keyword in message for keyword in keywords)) or \
-               (condition.operation == 'or' and any(keyword in message for keyword in keywords)):
-                matched_responses.append(condition.response)
 
-        serializer = MessageResponseSerializer(matched_responses, many=True)
-        return Response(status=status.HTTP_200_OK , data=serializer.data)
+        for condition in conditions:
+            ruleset_operation = condition.ruleset.operation
+ 
+            if condition.check_condition(message):
+                if ruleset_operation == "or":
+                    serializer = MessageResponseSerializer(condition.ruleset.response)
+                    return Response(status=status.HTTP_200_OK , data=serializer.data)
+                
+                for rulset_condition in condition.ruleset.conditions.all():
+                    if not rulset_condition.check_condition(message):
+                        return Response(status=status.HTTP_404_NOT_FOUND)
+
+                serializer = MessageResponseSerializer(condition.ruleset.response)
+                return Response(status=status.HTTP_200_OK , data=serializer.data)
+
+        return Response(status=status.HTTP_404_NOT_FOUND)
